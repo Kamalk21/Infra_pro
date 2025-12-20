@@ -1,0 +1,118 @@
+trigger: none
+
+pool: Default
+
+variables:
+- name: WRKDIR
+  value: $(System.DefaultWorkingDirectory)/environment/dev
+
+stages: 
+- stage: init
+  displayName: terraform init
+  jobs:
+      - job: terraform
+        steps:
+          - task: TerraformTask@5
+            displayName: terraform init
+            inputs:
+              provider: 'azurerm'
+              command: 'init'
+              workingDirectory: '$(WRKDIR)'
+              backendAzureRmUseEntraIdForAuthentication: false
+              backendServiceArm: 'Service-infra-pipeline'
+              backendAzureRmResourceGroupName: 'kamalrg'
+              backendAzureRmStorageAccountName: 'kamalstg1'
+              backendAzureRmContainerName: 'blobcontainer'
+              backendAzureRmKey: 'terraform.tfstate'
+- stage: scanning
+  displayName: Scanning code
+  dependsOn: init
+  jobs:
+    - job: checkov
+      steps:
+        - task: PowerShell@2
+          displayName: Checkov scanning
+          continueOnError: true
+          inputs:
+            targetType: 'inline'
+            script: 'checkov -d "$(System.DefaultWorkingDirectory)" -o junitxml > checkovres.xml'
+        - task: PublishTestResults@2
+          displayName: Checkov Publish Report 
+          inputs:
+            testResultsFormat: 'JUnit'
+            testResultsFiles: 'checkovres.xml'
+        - task: PowerShell@2
+          displayName: TFlint scanning
+          continueOnError: true
+          inputs:
+            targetType: 'inline'
+            script: 'tflint --chdir="$(System.DefaultWorkingDirectory)" --recursive --format junit | Out-File -Encoding utf8 > tflint-report.xml ;exit 0 '
+        - task: PublishTestResults@2
+          displayName: TFlint Publish Report
+          inputs:
+            testResultsFormat: 'JUnit'
+            testResultsFiles: 'tflint-report.xml'
+
+- stage: 
+  displayName: Terraform plan
+  jobs:
+    - job: 
+      steps:
+      - task: TerraformTask@5
+        displayName: terraform init
+        inputs:
+          provider: 'azurerm'
+          command: 'init'
+          workingDirectory: '$(WRKDIR)'
+          backendAzureRmUseEntraIdForAuthentication: false
+          backendServiceArm: 'Service-infra-pipeline'
+          backendAzureRmResourceGroupName: 'kamalrg'
+          backendAzureRmStorageAccountName: 'kamalstg1'
+          backendAzureRmContainerName: 'blobcontainer'
+          backendAzureRmKey: 'terraform.tfstate'
+
+      - task: TerraformTask@5
+        displayName: Terraform plan
+        inputs:
+          provider: 'azurerm'
+          command: 'plan'
+          workingDirectory: '$(WRKDIR)'
+          environmentServiceNameAzureRM: 'Service-infra-pipeline'
+- stage: 
+  displayName: Manual validation
+  jobs:
+    - job: 
+      pool: server
+      steps:
+        - task: ManualValidation@1
+          inputs:
+            notifyUsers: 'kamalkdev21@gmail.com'
+            approvers: 'kamalkdev21@gmail.com'
+- stage: 
+  displayName: Terraform apply
+  jobs:
+    - job: 
+      steps:
+        - task: TerraformTask@5
+          displayName: terraform init
+          inputs:
+            provider: 'azurerm'
+            command: 'init'
+            workingDirectory: '$(WRKDIR)'
+            backendAzureRmUseEntraIdForAuthentication: false
+            backendServiceArm: 'Service-infra-pipeline'
+            backendAzureRmResourceGroupName: 'kamalrg'
+            backendAzureRmStorageAccountName: 'kamalstg1'
+            backendAzureRmContainerName: 'blobcontainer'
+            backendAzureRmKey: 'terraform.tfstate'
+
+        - task: TerraformTask@5
+          displayName: Terraform apply
+          inputs:
+            provider: 'azurerm'
+            command: 'apply'
+            workingDirectory: '$(WRKDIR)'
+            environmentServiceNameAzureRM: 'Service-infra-pipeline'
+        
+
+        
